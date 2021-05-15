@@ -1,0 +1,14 @@
+"resources": [
+{
+  "type": "Microsoft.Network/publicIPAddresses",
+  "name": "[variables('publicIPAddressName')]",
+  "location": "[parameters('location')]",
+  "apiVersion": "2018-08-01",
+  "properties": {
+    "publicIPAllocationMethod": "Dynamic",
+    "dnsSettings": {
+      "domainNameLabel": "[parameters('dnsLabelPrefix')]"
+    }
+  }
+}
+],
