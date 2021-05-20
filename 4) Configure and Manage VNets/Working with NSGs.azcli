@@ -1,0 +1,271 @@
+## List all available
+az account list-locations -o table
+
+## Resource group name as variable
+rg=testingNSGs
+
+    az group create --name $rg --location UKSouth
+
+## ERP-servers Vnet
+az network vnet create \
+    --resource-group $rg \
+    --name ERP-servers \
+    --address-prefixes 10.0.0.0/16 \
+    --subnet-name Applications \
+    --subnet-prefixes 10.0.0.0/24
+
+## Create the database subnet
+az network vnet subnet create \
+    --resource-group $rg \
+    --vnet-name ERP-servers \
+    --address-prefixes 10.0.1.0/24 \
+    --name Databases
+
+## Create the ERP-Servers NSG
+az network nsg create \
+    --resource-group $rg \
+    --name ERP-SERVERS-NSG
+
+## Get the github content
+wget -N https://raw.githubusercontent.com/MicrosoftDocs/mslearn-secure-and-isolate-with-nsg-and-service-endpoints/master/cloud-init.yml && \
+
+## Create the AppServer VM
+az vm create \
+    --resource-group $rg \
+    --name AppServer \
+    --vnet-name ERP-servers \
+    --subnet Applications \
+    --nsg ERP-SERVERS-NSG \
+    --image UbuntuLTS \
+    --size Standard_DS1_v2 \
+    --admin-username azureuser \
+    --custom-data cloud-init.yml \
+    --no-wait \
+    --admin-password Password12345
+
+## Create the database server VM
+az vm create \
+    --resource-group $rg \
+    --name DataServer \
+    --vnet-name ERP-servers \
+    --subnet Databases \
+    --nsg ERP-SERVERS-NSG \
+    --size Standard_DS1_v2 \
+    --image UbuntuLTS \
+    --admin-username azureuser \
+    --custom-data cloud-init.yml \
+    --admin-password Password12345
+
+## View the VM provisioning status
+az vm list \
+    --resource-group $rg \
+    --show-details \
+    --query "[*].{Name:name, Provisioned:provisioningState, Power:powerState}" \
+    --output table
+
+## Get the VM`s IP`s
+az vm list \
+    --resource-group $rg \
+    --show-details \
+    --query "[*].{Name:name, PrivateIP:privateIps, PublicIP:publicIps}" \
+    --output table
+
+## Store The App/Datbase Server`s IP`s as Variables
+APPSERVERIP="$(az vm list-ip-addresses \
+                 --resource-group $rg \
+                 --name AppServer \
+                 --query "[].virtualMachine.network.publicIpAddresses[*].ipAddress" \
+                 --output tsv)"
+
+DATASERVERIP="$(az vm list-ip-addresses \
+                 --resource-group $rg \
+                 --name DataServer \
+                 --query "[].virtualMachine.network.publicIpAddresses[*].ipAddress" \
+                 --output tsv)"
+
+## Check connection to Appserver (It will fail, as any inbound connection to a Vnet is blocked)
+ssh azureuser@$APPSERVERIP -o ConnectTimeout=5
+
+## Check connection to DatabaseServer (It will fail, as any inbound connection to a Vnet is blocked)
+ssh azureuser@$DATASERVERIP -o ConnectTimeout=5
+
+## NSG RULE that allows Inbound SSH
+az network nsg rule create \
+    --resource-group $rg \
+    --nsg-name ERP-SERVERS-NSG \
+    --name AllowSSHRule \
+    --direction Inbound \
+    --priority 100 \
+    --source-address-prefixes '*' \
+    --source-port-ranges '*' \
+    --destination-address-prefixes '*' \
+    --destination-port-ranges 22 \
+    --access Allow \
+    --protocol Tcp \
+    --description "Allow inbound SSH"
+
+## Should now be able to connect
+ssh azureuser@$APPSERVERIP -o ConnectTimeout=5
+
+## Should now be able to connect
+ssh azureuser@$DATASERVERIP -o ConnectTimeout=5
+
+## Create a rule so that the App server can communicate with the Database, but Database can`t communicate with App
+## Inbound security rule that blocks port 80
+az network nsg rule create \
+    --resource-group $rg \
+    --nsg-name ERP-SERVERS-NSG \
+    --name httpRule \
+    --direction Inbound \
+    --priority 150 \
+    --source-address-prefixes 10.0.1.4 \
+    --source-port-ranges '*' \
+    --destination-address-prefixes 10.0.0.4 \
+    --destination-port-ranges 80 \
+    --access Deny \
+    --protocol Tcp \
+    --description "Deny from DataServer to AppServer on port 80"
+
+## Connect to App and see if you can communicate with Database
+ssh -t azureuser@$APPSERVERIP 'wget http://10.0.1.4; exit; bash'
+
+## Connect to Database and see if it can communicate with app
+ssh -t azureuser@$DATASERVERIP 'wget http://10.0.0.4; exit; bash'
+
+## Create an app security group
+az network asg create \
+    --resource-group $rg \
+    --name ERP-DB-SERVERS-ASG
+
+## Asociate the database with ASG
+az network nic ip-config update \
+    --resource-group $rg \
+    --application-security-groups ERP-DB-SERVERS-ASG \
+    --name ipconfigDataServer \
+    --nic-name DataServerVMNic \
+    --vnet-name ERP-servers \
+    --subnet Databases
+
+## Update the NSG to use the for Source flag
+az network nsg rule update \
+    --resource-group $rg \
+    --nsg-name ERP-SERVERS-NSG \
+    --name httpRule \
+    --direction Inbound \
+    --priority 150 \
+    --source-address-prefixes "" \
+    --source-port-ranges '*' \
+    --source-asgs ERP-DB-SERVERS-ASG \
+    --destination-address-prefixes 10.0.0.4 \
+    --destination-port-ranges 80 \
+    --access Deny \
+    --protocol Tcp \
+    --description "Deny from DataServer to AppServer on port 80 using application security group"
+
+## Connect to App and see if you can communicate with Database
+ssh -t azureuser@$APPSERVERIP 'wget http://10.0.1.4; exit; bash'
+
+## Connect to Database and see if it can communicate with app
+ssh -t azureuser@$DATASERVERIP 'wget http://10.0.0.4; exit; bash'
+
+## Delete the resouce group
+az group delete --resource-group $rg
+
+## Configure Private Endpoints
+## Create outbound rule for the storage accounts
+az network nsg rule create \
+    --resource-group $rg \
+    --nsg-name ERP-SERVERS-NSG \
+    --name Allow_Storage \
+    --priority 190 \
+    --direction Outbound \
+    --source-address-prefixes "VirtualNetwork" \
+    --source-port-ranges '*' \
+    --destination-address-prefixes "Storage" \
+    --destination-port-ranges '*' \
+    --access Allow \
+    --protocol '*' \
+    --description "Allow access to Azure Storage"
+
+## Create an outbound rule to deny all internet access
+az network nsg rule create \
+    --resource-group $rg \
+    --nsg-name ERP-SERVERS-NSG \
+    --name Deny_Internet \
+    --priority 200 \
+    --direction Outbound \
+    --source-address-prefixes "VirtualNetwork" \
+    --source-port-ranges '*' \
+    --destination-address-prefixes "Internet" \
+    --destination-port-ranges '*' \
+    --access Deny \
+    --protocol '*' \
+    --description "Deny access to Internet."
+
+## Create a storage account and store as a variable
+STORAGEACCT=$(az storage account create \
+                --resource-group $rg \
+                --name engineeringdocs$RANDOM \
+                --sku Standard_LRS \
+                --query "name" | tr -d '"')
+
+## Store primary key as of the storage account in a variable
+STORAGEKEY=$(az storage account keys list \
+                --resource-group $rg \
+                --account-name $STORAGEACCT \
+                --query "[0].value" | tr -d '"')
+
+## Create a file share
+az storage share create \
+    --account-name $STORAGEACCT \
+    --account-key $STORAGEKEY \
+    --name "erp-data-share"
+
+## Create service endpoint for using microsoft.storage
+az network vnet subnet update \
+    --vnet-name ERP-servers \
+    --resource-group $rg \
+    --name Databases \
+    --service-endpoints Microsoft.Storage
+
+## Deny all access to storage account
+az storage account update \
+    --resource-group $rg \
+    --name $STORAGEACCT \
+    --default-action Deny
+
+## add NSG rule to allow the Databases subnet access to the storage account through the serverice endpoint
+az storage account network-rule add \
+    --resource-group $rg \
+    --account-name $STORAGEACCT \
+    --vnet-name ERP-servers \
+    --subnet Databases
+
+## Test servers
+## Store the servers IP addresses
+APPSERVERIP="$(az vm list-ip-addresses \
+                    --resource-group $rg \
+                    --name AppServer \
+                    --query "[].virtualMachine.network.publicIpAddresses[*].ipAddress" \
+                    --output tsv)"
+
+DATASERVERIP="$(az vm list-ip-addresses \
+                    --resource-group $rg \
+                    --name DataServer \
+                    --query "[].virtualMachine.network.publicIpAddresses[*].ipAddress" \
+                    --output tsv)"
+
+## Connect to the app server and mount the file share
+ssh -t azureuser@$APPSERVERIP \
+    "mkdir azureshare; \
+    sudo mount -t cifs //$STORAGEACCT.file.core.windows.net/erp-data-share azureshare \
+    -o vers=3.0,username=$STORAGEACCT,password=$STORAGEKEY,dir_mode=0777,file_mode=0777,sec=ntlmssp; findmnt \
+    -t cifs; exit; bash"
+## This will fail
+
+## Mount the file share throught the Database server
+ssh -t azureuser@$DATASERVERIP \
+    "mkdir azureshare; \
+    sudo mount -t cifs //$STORAGEACCT.file.core.windows.net/erp-data-share azureshare \
+    -o vers=3.0,username=$STORAGEACCT,password=$STORAGEKEY,dir_mode=0777,file_mode=0777,sec=ntlmssp;findmnt \
+    -t cifs; exit; bash"

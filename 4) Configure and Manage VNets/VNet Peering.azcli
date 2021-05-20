@@ -1,0 +1,173 @@
+## Create Vnets
+az network vnet create \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --name SalesVNet \
+    --address-prefixes 10.1.0.0/16 \
+    --subnet-name Apps \
+    --subnet-prefixes 10.1.1.0/24 \
+    --location northeurope
+
+az network vnet create \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --name MarketingVNet \
+    --address-prefixes 10.2.0.0/16 \
+    --subnet-name Apps \
+    --subnet-prefixes 10.2.1.0/24 \
+    --location northeurope
+
+az network vnet create \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --name ResearchVNet \
+    --address-prefixes 10.3.0.0/16 \
+    --subnet-name Data \
+    --subnet-prefixes 10.3.1.0/24 \
+    --location westeurope
+
+## Show any virtual networks 
+az network vnet list --output table
+
+## Create Virtual Machines
+az vm create \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --no-wait \
+    --name SalesVM \
+    --location northeurope \
+    --vnet-name SalesVNet \
+    --subnet Apps \
+    --image UbuntuLTS \
+    --size "Standard_B1s" \
+    --admin-username azureuser \
+    --admin-password Password12345
+
+az vm create \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --no-wait \
+    --name MarketingVM \
+    --location northeurope \
+    --vnet-name MarketingVNet \
+    --subnet Apps \
+    --image UbuntuLTS \
+    --size "Standard_B1s" \
+    --admin-username azureuser \
+    --admin-password Password12345
+
+az vm create \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --name ResearchVM \
+    --no-wait \
+    --location westeurope \
+    --vnet-name ResearchVNet \
+    --subnet Data \
+    --image UbuntuLTS \
+    --size "Standard_B1s" \
+    --admin-username azureuser \
+    --admin-password Password12345
+
+## Create Network Peer From SalesVNet to MarketingVNet
+az network vnet peering create \
+    --name SalesVNet-To-MarketingVNet \
+    --remote-vnet MarketingVNet \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --vnet-name SalesVNet \
+    --allow-vnet-access
+
+## Create network Peer from Marketing to Sales
+az network vnet peering create \
+    --name MarketingVNet-To-SalesVNet \
+    --remote-vnet SalesVNet \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --vnet-name MarketingVNet \
+    --allow-vnet-access
+
+## Create Network Peer from Marketing to Research
+az network vnet peering create \
+    --name MarketingVNet-To-ResearchVNet \
+    --remote-vnet ResearchVNet \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --vnet-name MarketingVNet \
+    --allow-vnet-access
+
+## Create Network Peer from Research to Marketing
+az network vnet peering create \
+    --name ResearchVNet-To-MarketingVNet \
+    --remote-vnet MarketingVNet \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --vnet-name ResearchVNet \
+    --allow-vnet-access
+
+## Check connection between Sales and Marketing
+az network vnet peering list \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --vnet-name SalesVNet \
+    --output table
+
+## Check connection between research and marketing
+az network vnet peering list \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --vnet-name ResearchVNet \
+    --output table
+
+## Check connections from marketing
+az network vnet peering list \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --vnet-name MarketingVNet \
+    --output table
+
+## Look at available routes for the Sales VM
+az network nic show-effective-route-table \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --name SalesVMVMNic \
+    --output table
+
+## Look at available routes for the Marketing VM
+az network nic show-effective-route-table \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --name MarketingVMVMNic \
+    --output table
+
+## Look at available routes for the Research VM
+az network nic show-effective-route-table \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --name ResearchVMVMNic \
+    --output table
+
+## View IPs of VMs
+az vm list \
+    --resource-group learn-25a063d7-a51b-46b7-97a3-822cd923d25e \
+    --query "[*].{Name:name, PrivateIP:privateIps, PublicIP:publicIps}" \
+    --show-details \
+    --output table
+
+## Using SSH Remote into the Sales VM
+ssh -o StrictHostKeyChecking=no azureuser@<SalesVM public IP>
+
+## Using SSH Remote into the Marketing VM through the Sales VM
+ssh -o StrictHostKeyChecking=no azureuser@137.135.206.233
+
+## Using SHH try to remote into the Research VM through the Sales VM, this should fail as there is no Peering
+ssh -o StrictHostKeyChecking=no azureuser@<ResearchVM private IP>
+
+## Test the connection from the Research VM
+## remote into Research VM using SSH
+ssh -o StrictHostKeyChecking=no azureuser@<ResearchVM public IP>
+ssh -o StrictHostKeyChecking=no azureuser@20.86.105.225 ##In this case
+
+## From the research VM use SSH to remote into the Marketing VM
+ssh -o StrictHostKeyChecking=no azureuser@<MarketingVM private IP>
+ssh -o StrictHostKeyChecking=no azureuser@137.135.206.233 ##In this case
+
+## From the research VM use SSH to remote into the Sales VM, this should fail as there isnt a Vnet peer setup
+ssh -o StrictHostKeyChecking=no azureuser@<SalesVM private IP>
+
+##Test the connection form the Marketing VM to other VNet Peers
+ssh -o StrictHostKeyChecking=no azureuser@<MarketingVM public IP>
+ssh -o StrictHostKeyChecking=no azureuser@137.135.206.233 ##In this case
+
+## From the Marketing VM us SSH to remote into the Sales VM
+ssh -o StrictHostKeyChecking=no azureuser@<SalesVM private IP>
+ssh -o StrictHostKeyChecking=no azureuser@137.135.201.252 ##In this case
+
+
+## From the Marketing VM us SSH to remote into the Research VM
+ssh -o StrictHostKeyChecking=no azureuser@<ResearchVM public IP>
+ssh -o StrictHostKeyChecking=no azureuser@20.86.105.225 ##In this case

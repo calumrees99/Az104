@@ -1,0 +1,14 @@
+## Clones git reposory
+git clone https://github.com/MicrosoftDocs/mslearn-host-domain-azure-dns.git
+
+## Creates azure environment
+## Creates a network security group.
+## Creates two network interface controllers (NICs) and two VMs.
+## Creates a virtual network and assigns the VMs.
+## Creates a public IP address and updates the configuration of the VMs.
+## Creates a load balancer that references the VMs, including rules for the load balancer.
+## Links the NICs to the load balancer.
+cd mslearn-host-domain-azure-dns
+chmod +x setup.sh
+./setup.sh
+

@@ -1,0 +1,21 @@
+## Create bastion subnet
+az network vnet subnet create \
+  --resource-group myBastionRG \
+  --vnet-name MyVirtualNetwork \
+  --name AzureBastionSubnet \
+  --address-prefixes 10.0.2.0/24
+
+## Create public IP for Bastion
+az network public-ip create \
+  --resource-group MyResourceGroup \
+  --name MyPublicIp \
+  --sku Standard \
+  --location westus2
+
+## Create Bastion resource
+az network bastion create \
+  --name MyBastion \
+  --public-ip-address MyPublicIp \
+  --resource-group MyResourceGroup \
+  --vnet-name MyVnet \
+  --location westus2
