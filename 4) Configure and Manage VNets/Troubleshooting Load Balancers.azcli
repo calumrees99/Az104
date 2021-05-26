@@ -1,0 +1,8 @@
+## Clone Microsofts Git template but we need to modify VM size to free SKU
+git clone https://github.com/MicrosoftDocs/mslearn-troubleshoot-inbound-network-connectivity-azure-load-balancer C:\Users\calum\Documents\AZ104\Git\Az104\test
+
+## Edit the code
+## Navigate to Scripts folder
+cd ~/load-balancer/src/scripts
+
+## 
